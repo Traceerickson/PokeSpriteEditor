@@ -1,0 +1,6 @@
+name = "poke-sprite-worker"
+type = "javascript"
+
+[[r2_buckets]]
+binding = "SPRITE_BUCKET"
+bucket_name = "poke-sprites"
