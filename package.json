@@ -1,0 +1,11 @@
+{
+  "name": "poke-sprite-editor",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix poke-sprite-forge/frontend install && npm --prefix poke-sprite-forge/worker install",
+    "dev": "concurrently -k \"npm --prefix poke-sprite-forge/frontend run dev\" \"npm --prefix poke-sprite-forge/worker run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

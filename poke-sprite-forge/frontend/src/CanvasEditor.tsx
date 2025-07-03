@@ -88,7 +88,8 @@ export default function CanvasEditor() {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const dataUrl = buffer.toDataURL('image/png');
-    const res = await fetch('/upload', {
+    const base = import.meta.env.VITE_API_BASE_URL || '';
+    const res = await fetch(`${base}/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: dataUrl })
