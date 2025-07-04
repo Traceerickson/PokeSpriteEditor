@@ -9,6 +9,7 @@ interface SpriteTemplate {
   frameHeight?: number;
   framesAcross?: number;
   framesDown?: number;
+  type?: 'overworld' | 'battle' | 'custom';
 }
 
 const TEMPLATES: SpriteTemplate[] = [
@@ -21,6 +22,7 @@ const TEMPLATES: SpriteTemplate[] = [
     frameHeight: 16,
     framesAcross: 4,
     framesDown: 4,
+    type: 'overworld',
   },
   {
     id: 'ow-ds',
@@ -31,24 +33,28 @@ const TEMPLATES: SpriteTemplate[] = [
     frameHeight: 32,
     framesAcross: 4,
     framesDown: 4,
+    type: 'overworld',
   },
   {
     id: 'battle-front-g34',
     name: 'Battle Sprite (Gen 3–4 Front)',
     width: 80,
     height: 80,
+    type: 'battle',
   },
   {
     id: 'battle-back-g34',
     name: 'Battle Sprite (Gen 3–4 Back)',
     width: 80,
     height: 80,
+    type: 'battle',
   },
   {
     id: 'battle-g5',
     name: 'Battle Sprite (Gen 5 Front/Back)',
     width: 96,
     height: 96,
+    type: 'battle',
   },
 ];
 
@@ -65,6 +71,12 @@ export default function CanvasEditor() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+  const DIRECTIONS = ['Down', 'Right', 'Left', 'Up'];
+  const FRAME_LABELS = ['Standing', 'Walk 1', 'Walk 2', 'Walk 3'];
+  const [activeDirection, setActiveDirection] = useState(0);
+  const [activeFrame, setActiveFrame] = useState(0);
+  const frameMapRef = useRef<Record<number, Record<number, ImageData | null>>>({});
 
   const drawGrid = useCallback(
     (ctx: CanvasRenderingContext2D) => {
@@ -173,6 +185,11 @@ export default function CanvasEditor() {
       bufferRef.current = buffer;
     }
 
+    frameMapRef.current = {};
+    for (let d = 0; d < 4; d++) frameMapRef.current[d] = {};
+    setActiveDirection(0);
+    setActiveFrame(0);
+
     redraw();
   }, [canvasWidth, canvasHeight, template, redraw]);
 
@@ -219,11 +236,42 @@ export default function CanvasEditor() {
     setIsDrawing(false);
   };
 
+  const saveCurrentFrame = () => {
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const ctx = buffer.getContext('2d');
+    if (!ctx) return;
+    const data = ctx.getImageData(0, 0, template.width, template.height);
+    if (!frameMapRef.current[activeDirection]) frameMapRef.current[activeDirection] = {};
+    frameMapRef.current[activeDirection][activeFrame] = data;
+  };
+
+  const loadFrame = (dir: number, fr: number) => {
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const ctx = buffer.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, template.width, template.height);
+    const data = frameMapRef.current[dir]?.[fr];
+    if (data) ctx.putImageData(data, 0, 0);
+    redraw();
+  };
+
+  const handleFrameSelect = (dir: number, fr: number) => {
+    saveCurrentFrame();
+    setActiveDirection(dir);
+    setActiveFrame(fr);
+    loadFrame(dir, fr);
+  };
+
   const clearCanvas = () => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const ctx = buffer.getContext('2d');
     ctx?.clearRect(0, 0, template.width, template.height);
+    if (frameMapRef.current[activeDirection]) {
+      frameMapRef.current[activeDirection][activeFrame] = null;
+    }
     redraw();
     setDownloadUrl(null);
   };
@@ -243,6 +291,38 @@ export default function CanvasEditor() {
       const body = (await res.json()) as { url: string };
       setDownloadUrl(body.url);
     }
+  };
+
+  const exportOverworldSheet = () => {
+    saveCurrentFrame();
+    if (template.type !== 'overworld' || !template.frameWidth || !template.frameHeight) return;
+
+    const out = document.createElement('canvas');
+    out.width = template.frameWidth * 4;
+    out.height = template.frameHeight * 4;
+    const ctx = out.getContext('2d');
+    if (!ctx) return;
+
+    for (let d = 0; d < 4; d++) {
+      for (let f = 0; f < 4; f++) {
+        const data = frameMapRef.current[d]?.[f] || frameMapRef.current[d]?.[0];
+        if (data) ctx.putImageData(data, f * template.frameWidth, d * template.frameHeight);
+      }
+    }
+
+    const scaled = document.createElement('canvas');
+    const scaleFactor = 4;
+    scaled.width = out.width * scaleFactor;
+    scaled.height = out.height * scaleFactor;
+    const sctx = scaled.getContext('2d');
+    if (!sctx) return;
+    sctx.imageSmoothingEnabled = false;
+    sctx.drawImage(out, 0, 0, scaled.width, scaled.height);
+    const url = scaled.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${template.id}_overworld_sheet.png`;
+    a.click();
   };
 
   const importSprite = () => {
@@ -267,6 +347,7 @@ export default function CanvasEditor() {
         name: 'Imported Sprite',
         width: img.width,
         height: img.height,
+        type: 'custom',
       });
     };
     img.src = URL.createObjectURL(file);
@@ -293,19 +374,58 @@ export default function CanvasEditor() {
           ))}
         </select>
       </div>
-      <div className="border border-gray-700 shadow-lg p-2 bg-black">
-        <canvas
-          ref={canvasRef}
-          className="block"
-          width={canvasWidth}
-          height={canvasHeight}
-          style={{ touchAction: 'none', imageRendering: 'pixelated' }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-          onContextMenu={(e) => e.preventDefault()}
-        />
+      <div className="flex gap-4">
+        <div className="border border-gray-700 shadow-lg p-2 bg-black">
+          <canvas
+            ref={canvasRef}
+            className="block"
+            width={canvasWidth}
+            height={canvasHeight}
+            style={{ touchAction: 'none', imageRendering: 'pixelated' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+            onContextMenu={(e) => e.preventDefault()}
+          />
+        </div>
+        {template.type === 'overworld' && (
+          <div className="space-y-2">
+            <div className="text-center text-sm font-semibold">Overworld Frames (4-Directional)</div>
+            <div className="grid grid-cols-5 gap-1">
+              <div></div>
+              {FRAME_LABELS.map((fl) => (
+                <div key={fl} className="text-xs text-center">
+                  {fl}
+                </div>
+              ))}
+              {DIRECTIONS.map((dir, dIdx) => (
+                <>
+                  <div key={`label-${dir}`} className="text-xs flex items-center pr-1">
+                    {dir}
+                  </div>
+                  {FRAME_LABELS.map((fl, fIdx) => {
+                    const active = activeDirection === dIdx && activeFrame === fIdx;
+                    return (
+                      <button
+                        key={`${dIdx}-${fIdx}`}
+                        onClick={() => handleFrameSelect(dIdx, fIdx)}
+                        title={fl}
+                        className={`w-8 h-8 border rounded ${active ? 'bg-blue-600' : 'bg-gray-700'} hover:bg-gray-600`}
+                      />
+                    );
+                  })}
+                </>
+              ))}
+            </div>
+            <button
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+              onClick={exportOverworldSheet}
+            >
+              Export Overworld Sprite Sheet
+            </button>
+          </div>
+        )}
       </div>
       <div className="text-sm text-center text-gray-300">
         {template.name} — {template.width}x{template.height}
