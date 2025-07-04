@@ -1,139 +1,87 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-interface SpriteTemplate {
-  id: string;
-  name: string;
-  width: number;
-  height: number;
-  frameWidth?: number;
-  frameHeight?: number;
-  framesAcross?: number;
-  framesDown?: number;
-  type?: 'overworld' | 'battle' | 'custom';
-}
+import ProjectModal, { type SpriteTemplate } from './components/ProjectModal';
+import TopBar from './components/TopBar';
+import LeftSidebar from './components/LeftSidebar';
+import RightSidebar from './components/RightSidebar';
+import FramePanel from './components/FramePanel';
 
 const TEMPLATES: SpriteTemplate[] = [
   {
-    id: 'ow-gba',
-    name: 'Overworld (GBA)',
-    width: 128,
-    height: 64,
-    frameWidth: 32,
-    frameHeight: 16,
-    framesAcross: 4,
-    framesDown: 4,
-    type: 'overworld',
-  },
-  {
     id: 'ow-ds',
-    name: 'Overworld (DS)',
+    name: 'Overworld Sprite (DS Style)',
+    description: '4-directional, 16 frames, 32×32 per frame',
     width: 128,
     height: 128,
-    frameWidth: 32,
-    frameHeight: 32,
-    framesAcross: 4,
-    framesDown: 4,
     type: 'overworld',
   },
   {
-    id: 'battle-front-g34',
-    name: 'Battle Sprite (Gen 3–4 Front)',
-    width: 80,
-    height: 80,
-    type: 'battle',
-  },
-  {
-    id: 'battle-back-g34',
-    name: 'Battle Sprite (Gen 3–4 Back)',
-    width: 80,
-    height: 80,
-    type: 'battle',
+    id: 'ow-gba',
+    name: 'Overworld Sprite (GBA Style)',
+    description: '4-directional, 16 frames, 32×16 per frame',
+    width: 128,
+    height: 64,
+    type: 'overworld',
   },
   {
     id: 'battle-g5',
-    name: 'Battle Sprite (Gen 5 Front/Back)',
+    name: 'Battle Sprite (Gen 5 Style)',
+    description: '96×96 front/back',
     width: 96,
     height: 96,
     type: 'battle',
   },
+  {
+    id: 'battle-g34',
+    name: 'Battle Sprite (Gen 3/4 Style)',
+    description: '80×80 front/back',
+    width: 80,
+    height: 80,
+    type: 'battle',
+  },
+  {
+    id: 'custom',
+    name: 'Custom Project',
+    description: '128×128 canvas by default',
+    width: 128,
+    height: 128,
+    type: 'custom',
+  },
 ];
 
-export default function CanvasEditor() {
-  const [template, setTemplate] = useState<SpriteTemplate>(TEMPLATES[0]);
+interface Props {
+  project?: { template: SpriteTemplate; name: string };
+}
+
+export default function CanvasEditor({ project }: Props) {
+  const [showModal, setShowModal] = useState(!project);
+  const [template, setTemplate] = useState<SpriteTemplate>(project?.template || TEMPLATES[0]);
+  const [projectName, setProjectName] = useState(project?.name || '');
+
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(2);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bufferRef = useRef<HTMLCanvasElement | null>(null);
+  const [scale, setScale] = useState(4);
+  const [tool, setTool] = useState('pencil');
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [color, setColor] = useState('#000000');
+  const [activeFrame, setActiveFrame] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [activeTile, setActiveTile] = useState('front');
+  const frameMapRef = useRef<Record<string, Record<number, ImageData | null>>>({});
+  const historyRef = useRef<ImageData[]>([]);
+
   const canvasWidth = template.width * scale;
   const canvasHeight = template.height * scale;
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const bufferRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [isErasing, setIsErasing] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-
-  const DIRECTIONS = ['Down', 'Right', 'Left', 'Up'];
-  const FRAME_LABELS = ['Standing', 'Walk 1', 'Walk 2', 'Walk 3'];
-  const [activeDirection, setActiveDirection] = useState(0);
-  const [activeFrame, setActiveFrame] = useState(0);
-  const frameMapRef = useRef<Record<number, Record<number, ImageData | null>>>({});
-
-  const drawGrid = useCallback(
-    (ctx: CanvasRenderingContext2D) => {
-      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-      for (let x = 0; x <= template.width; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * scale, 0);
-        ctx.lineTo(x * scale, canvasHeight);
-        ctx.stroke();
-      }
-      for (let y = 0; y <= template.height; y++) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * scale);
-        ctx.lineTo(canvasWidth, y * scale);
-        ctx.stroke();
-      }
-
-      if (
-        template.frameWidth &&
-        template.frameHeight &&
-        template.framesAcross &&
-        template.framesDown
-      ) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-        for (let i = 1; i < template.framesAcross; i++) {
-          const x = i * template.frameWidth;
-          ctx.beginPath();
-          ctx.moveTo(x * scale, 0);
-          ctx.lineTo(x * scale, canvasHeight);
-          ctx.stroke();
-        }
-        for (let i = 1; i < template.framesDown; i++) {
-          const y = i * template.frameHeight;
-          ctx.beginPath();
-          ctx.moveTo(0, y * scale);
-          ctx.lineTo(canvasWidth, y * scale);
-          ctx.stroke();
-        }
-      }
-
-      if (template.id === 'battle-back-g34') {
-        const cropY = (template.height - 16) * scale;
-        ctx.strokeStyle = 'rgba(255,0,0,0.5)';
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, cropY);
-        ctx.lineTo(canvasWidth, cropY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    },
-    [template, scale, canvasWidth, canvasHeight]
-  );
+  const startProject = (t: SpriteTemplate, name: string) => {
+    setTemplate(t);
+    setProjectName(name || 'Untitled');
+    setShowModal(false);
+  };
 
   const computeScale = useCallback(() => {
-    const containerWidth = containerRef.current?.offsetWidth || window.innerWidth;
-    const desired = containerWidth * 0.65; // aim to fill ~65% of space
+    const w = containerRef.current?.offsetWidth || window.innerWidth;
+    const desired = w * 0.6;
     const newScale = Math.max(1, Math.floor(desired / template.width));
     setScale(newScale);
   }, [template]);
@@ -144,6 +92,16 @@ export default function CanvasEditor() {
     return () => window.removeEventListener('resize', computeScale);
   }, [computeScale]);
 
+  const drawCheckerboard = (ctx: CanvasRenderingContext2D) => {
+    const size = 8 * scale;
+    ctx.fillStyle = '#444';
+    for (let y = 0; y < canvasHeight; y += size) {
+      for (let x = (y / size) % 2 === 0 ? 0 : size; x < canvasWidth; x += size * 2) {
+        ctx.fillRect(x, y, size, size);
+      }
+    }
+  };
+
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     const buffer = bufferRef.current;
@@ -151,71 +109,49 @@ export default function CanvasEditor() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    drawCheckerboard(ctx);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      buffer,
-      0,
-      0,
-      template.width,
-      template.height,
-      0,
-      0,
-      canvasWidth,
-      canvasHeight
-    );
-    drawGrid(ctx);
-  }, [canvasWidth, canvasHeight, drawGrid, template]);
+    ctx.drawImage(buffer, 0, 0, template.width, template.height, 0, 0, canvasWidth, canvasHeight);
+  }, [canvasWidth, canvasHeight, template]);
 
-  // initialise canvases whenever the template or scale changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
-
-    if (
-      !bufferRef.current ||
-      bufferRef.current.width !== template.width ||
-      bufferRef.current.height !== template.height
-    ) {
-      const buffer = document.createElement('canvas');
-      buffer.width = template.width;
-      buffer.height = template.height;
-      bufferRef.current = buffer;
+    if (!bufferRef.current || bufferRef.current.width !== template.width || bufferRef.current.height !== template.height) {
+      const b = document.createElement('canvas');
+      b.width = template.width;
+      b.height = template.height;
+      bufferRef.current = b;
     }
-
     frameMapRef.current = {};
-    for (let d = 0; d < 4; d++) frameMapRef.current[d] = {};
-    setActiveDirection(0);
-    setActiveFrame(0);
-
+    ['front','back','front-shiny','back-shiny'].forEach(k => { frameMapRef.current[k] = {}; });
     redraw();
   }, [canvasWidth, canvasHeight, template, redraw]);
 
-
   const getCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left) / scale);
     const y = Math.floor((e.clientY - rect.top) / scale);
-    const clampedX = Math.max(0, Math.min(x, template.width - 1));
-    const clampedY = Math.max(0, Math.min(y, template.height - 1));
-    return { x: clampedX, y: clampedY };
+    return { x: Math.max(0, Math.min(x, template.width - 1)), y: Math.max(0, Math.min(y, template.height - 1)) };
   };
 
-  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const applyTool = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const ctx = buffer.getContext('2d');
     if (!ctx) return;
     const { x, y } = getCoords(e);
-    const erase = isErasing || e.button === 2;
-    if (erase) {
+    if (tool === 'eraser') {
       ctx.clearRect(x, y, 1, 1);
+    } else if (tool === 'dropper') {
+      const data = ctx.getImageData(x, y, 1, 1).data;
+      const c = `#${Array.from(data).slice(0,3).map(v => v.toString(16).padStart(2,'0')).join('')}`;
+      setColor(c);
+      setTool('pencil');
     } else {
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = color;
       ctx.fillRect(x, y, 1, 1);
     }
     redraw();
@@ -223,259 +159,118 @@ export default function CanvasEditor() {
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     setIsDrawing(true);
-    draw(e);
+    applyTool(e);
   };
-
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (isDrawing) {
-      draw(e);
-    }
+    if (isDrawing && tool !== 'dropper') applyTool(e);
   };
-
-  const handlePointerUp = () => {
+  const endDraw = () => {
+    if (!isDrawing) return;
     setIsDrawing(false);
-  };
-
-  const saveCurrentFrame = () => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const ctx = buffer.getContext('2d');
     if (!ctx) return;
     const data = ctx.getImageData(0, 0, template.width, template.height);
-    if (!frameMapRef.current[activeDirection]) frameMapRef.current[activeDirection] = {};
-    frameMapRef.current[activeDirection][activeFrame] = data;
+    historyRef.current.push(data);
+    frameMapRef.current[activeTile][activeFrame] = data;
   };
 
-  const loadFrame = (dir: number, fr: number) => {
+  const loadFrame = (tile: string, fr: number) => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const ctx = buffer.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, template.width, template.height);
-    const data = frameMapRef.current[dir]?.[fr];
+    const data = frameMapRef.current[tile]?.[fr];
     if (data) ctx.putImageData(data, 0, 0);
     redraw();
   };
 
-  const handleFrameSelect = (dir: number, fr: number) => {
-    saveCurrentFrame();
-    setActiveDirection(dir);
-    setActiveFrame(fr);
-    loadFrame(dir, fr);
+  const undo = () => {
+    const buffer = bufferRef.current;
+    if (!buffer || historyRef.current.length === 0) return;
+    const ctx = buffer.getContext('2d');
+    if (!ctx) return;
+    historyRef.current.pop();
+    const last = historyRef.current[historyRef.current.length - 1];
+    ctx.clearRect(0, 0, template.width, template.height);
+    if (last) ctx.putImageData(last, 0, 0);
+    frameMapRef.current[activeTile][activeFrame] = last || null;
+    redraw();
   };
 
-  const clearCanvas = () => {
+  const exportSheet = () => {
+    const canvas = bufferRef.current;
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = `${projectName || 'sprite'}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  useEffect(() => {
+    if (!playing) return;
+    const interval = setInterval(() => {
+      setActiveFrame(f => {
+        const next = (f + 1) % 4;
+        loadFrame(activeTile, next);
+        return next;
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, [playing, activeTile]);
+
+  const info = `${template.width}×${template.height} • ${scale}x zoom`;
+
+  if (showModal) return <ProjectModal templates={TEMPLATES} onCreate={startProject} />;
+
+  return (
+    <div className="flex flex-col h-full" ref={containerRef}>
+      <TopBar tool={tool} setTool={setTool} undo={undo} info={info} />
+      <div className="flex flex-1 overflow-hidden">
+        <LeftSidebar color={color} setColor={setColor} exportSheet={exportSheet} />
+        <div className="flex-1 flex items-center justify-center bg-gray-900">
+          <canvas
+            ref={canvasRef}
+            className="border border-gray-700"
+            style={{ imageRendering: 'pixelated', touchAction: 'none' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endDraw}
+            onPointerLeave={endDraw}
+            width={canvasWidth}
+            height={canvasHeight}
+          />
+        </div>
+        <RightSidebar
+          active={activeTile}
+          setActive={(tile) => {
+            saveCurrentFrame();
+            setActiveTile(tile);
+            loadFrame(tile, activeFrame);
+          }}
+        />
+      </div>
+      <FramePanel
+        active={activeFrame}
+        setActive={(fr) => {
+          saveCurrentFrame();
+          setActiveFrame(fr);
+          loadFrame(activeTile, fr);
+        }}
+        playing={playing}
+        togglePlay={() => setPlaying((p) => !p)}
+      />
+    </div>
+  );
+
+  function saveCurrentFrame() {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const ctx = buffer.getContext('2d');
-    ctx?.clearRect(0, 0, template.width, template.height);
-    if (frameMapRef.current[activeDirection]) {
-      frameMapRef.current[activeDirection][activeFrame] = null;
-    }
-    redraw();
-    setDownloadUrl(null);
-  };
-
-  const uploadSprite = async () => {
-    const buffer = bufferRef.current;
-    if (!buffer) return;
-    const dataUrl = buffer.toDataURL('image/png');
-
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/upload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: dataUrl, template: template.id }),
-    });
-
-    if (res.ok) {
-      const body = (await res.json()) as { url: string };
-      setDownloadUrl(body.url);
-    }
-  };
-
-  const exportOverworldSheet = () => {
-    saveCurrentFrame();
-    if (template.type !== 'overworld' || !template.frameWidth || !template.frameHeight) return;
-
-    const out = document.createElement('canvas');
-    out.width = template.frameWidth * 4;
-    out.height = template.frameHeight * 4;
-    const ctx = out.getContext('2d');
     if (!ctx) return;
-
-    for (let d = 0; d < 4; d++) {
-      for (let f = 0; f < 4; f++) {
-        const data = frameMapRef.current[d]?.[f] || frameMapRef.current[d]?.[0];
-        if (data) ctx.putImageData(data, f * template.frameWidth, d * template.frameHeight);
-      }
-    }
-
-    const scaled = document.createElement('canvas');
-    const scaleFactor = 4;
-    scaled.width = out.width * scaleFactor;
-    scaled.height = out.height * scaleFactor;
-    const sctx = scaled.getContext('2d');
-    if (!sctx) return;
-    sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(out, 0, 0, scaled.width, scaled.height);
-    const url = scaled.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${template.id}_overworld_sheet.png`;
-    a.click();
-  };
-
-  const importSprite = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const img = new Image();
-    img.onload = () => {
-      const buffer = document.createElement('canvas');
-      buffer.width = img.width;
-      buffer.height = img.height;
-      const ctx = buffer.getContext('2d');
-      if (!ctx) return;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0);
-      bufferRef.current = buffer;
-      setTemplate({
-        id: 'imported',
-        name: 'Imported Sprite',
-        width: img.width,
-        height: img.height,
-        type: 'custom',
-      });
-    };
-    img.src = URL.createObjectURL(file);
-  };
-
-  return (
-    <div ref={containerRef} className="flex flex-col items-center space-y-4 p-4">
-      <div className="flex items-center space-x-2">
-        <label htmlFor="template" className="font-medium">Template:</label>
-        <select
-          id="template"
-          value={template.id}
-          onChange={(e) =>
-            setTemplate(
-              TEMPLATES.find((t) => t.id === e.target.value) || TEMPLATES[0]
-            )
-          }
-          className="bg-gray-800 border border-gray-600 text-white px-2 py-1 rounded"
-        >
-          {TEMPLATES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex gap-4">
-        <div className="border border-gray-700 shadow-lg p-2 bg-black">
-          <canvas
-            ref={canvasRef}
-            className="block"
-            width={canvasWidth}
-            height={canvasHeight}
-            style={{ touchAction: 'none', imageRendering: 'pixelated' }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-            onContextMenu={(e) => e.preventDefault()}
-          />
-        </div>
-        {template.type === 'overworld' && (
-          <div className="space-y-2">
-            <div className="text-center text-sm font-semibold">Overworld Frames (4-Directional)</div>
-            <div className="grid grid-cols-5 gap-1">
-              <div></div>
-              {FRAME_LABELS.map((fl) => (
-                <div key={fl} className="text-xs text-center">
-                  {fl}
-                </div>
-              ))}
-              {DIRECTIONS.map((dir, dIdx) => (
-                <>
-                  <div key={`label-${dir}`} className="text-xs flex items-center pr-1">
-                    {dir}
-                  </div>
-                  {FRAME_LABELS.map((fl, fIdx) => {
-                    const active = activeDirection === dIdx && activeFrame === fIdx;
-                    return (
-                      <button
-                        key={`${dIdx}-${fIdx}`}
-                        onClick={() => handleFrameSelect(dIdx, fIdx)}
-                        title={fl}
-                        className={`w-8 h-8 border rounded ${active ? 'bg-blue-600' : 'bg-gray-700'} hover:bg-gray-600`}
-                      />
-                    );
-                  })}
-                </>
-              ))}
-            </div>
-            <button
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
-              onClick={exportOverworldSheet}
-            >
-              Export Overworld Sprite Sheet
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="text-sm text-center text-gray-300">
-        {template.name} — {template.width}x{template.height}
-      </div>
-      <div className="flex flex-wrap justify-center gap-2">
-        <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-          onClick={() => setIsErasing((v) => !v)}
-        >
-          {isErasing ? 'Erase Mode' : 'Draw Mode'}
-        </button>
-        <button
-          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-1 rounded"
-          onClick={clearCanvas}
-        >
-          Clear Canvas
-        </button>
-        <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-          onClick={uploadSprite}
-        >
-          Upload Sprite
-        </button>
-        <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-          onClick={importSprite}
-        >
-          Import Sprite
-        </button>
-      </div>
-      <input
-        type="file"
-        accept="image/png"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-      />
-      {downloadUrl && (
-        <div>
-          <a
-            href={downloadUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            download
-            className="underline text-blue-500"
-          >
-            Download Sprite
-          </a>
-        </div>
-      )}
-    </div>
-  );
+    const data = ctx.getImageData(0, 0, template.width, template.height);
+    frameMapRef.current[activeTile][activeFrame] = data;
+  }
 }
