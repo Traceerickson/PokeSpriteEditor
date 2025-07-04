@@ -70,6 +70,7 @@ export default function CanvasEditor({ project }: Props) {
   const [activeTile, setActiveTile] = useState('front');
   const frameMapRef = useRef<Record<string, Record<number, ImageData | null>>>({});
   const historyRef = useRef<ImageData[]>([]);
+  const [, setFrameVersion] = useState(0);
 
   const canvasWidth = template.width;
   const canvasHeight = template.height;
@@ -82,11 +83,13 @@ export default function CanvasEditor({ project }: Props) {
     setShowModal(false);
   };
 
+  const zoomIn = () => setScale(s => Math.min(8, s + 1));
+  const zoomOut = () => setScale(s => Math.max(1, s - 1));
+
   const computeScale = useCallback(() => {
     const w = containerRef.current?.offsetWidth || window.innerWidth;
-    const desired = w * 0.6;
-    const newScale = Math.max(1, Math.floor(desired / template.width));
-    setScale(newScale);
+    const max = Math.floor((w * 0.6) / template.width);
+    setScale(s => Math.min(Math.max(1, s), Math.min(8, Math.max(1, max))));
   }, [template]);
 
   useEffect(() => {
@@ -95,15 +98,6 @@ export default function CanvasEditor({ project }: Props) {
     return () => window.removeEventListener('resize', computeScale);
   }, [computeScale]);
 
-  const drawCheckerboard = (ctx: CanvasRenderingContext2D) => {
-    const size = 8;
-    ctx.fillStyle = '#444';
-    for (let y = 0; y < canvasHeight; y += size) {
-      for (let x = (y / size) % 2 === 0 ? 0 : size; x < canvasWidth; x += size * 2) {
-        ctx.fillRect(x, y, size, size);
-      }
-    }
-  };
 
   const drawGrid = () => {
     const gridCanvas = gridRef.current;
@@ -134,11 +128,10 @@ export default function CanvasEditor({ project }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    drawCheckerboard(ctx);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(buffer, 0, 0);
     drawGrid();
-  }, [canvasWidth, canvasHeight, template, scale]);
+  }, [canvasWidth, canvasHeight, template, scale, drawGrid]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -207,6 +200,7 @@ export default function CanvasEditor({ project }: Props) {
     const data = ctx.getImageData(0, 0, template.width, template.height);
     historyRef.current.push(data);
     frameMapRef.current[activeTile][activeFrame] = data;
+    setFrameVersion(v => v + 1);
   };
 
   const loadFrame = (tile: string, fr: number) => {
@@ -231,6 +225,7 @@ export default function CanvasEditor({ project }: Props) {
     if (last) ctx.putImageData(last, 0, 0);
     frameMapRef.current[activeTile][activeFrame] = last || null;
     redraw();
+    setFrameVersion(v => v + 1);
   };
 
   const exportSheet = () => {
@@ -240,6 +235,22 @@ export default function CanvasEditor({ project }: Props) {
     link.download = `${projectName || 'sprite'}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
+  };
+
+  const importSprite = (file: File) => {
+    const img = new Image();
+    img.onload = () => {
+      const buffer = bufferRef.current;
+      if (!buffer) return;
+      const ctx = buffer.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, template.width, template.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, template.width, template.height);
+      redraw();
+      saveCurrentFrame();
+    };
+    img.src = URL.createObjectURL(file);
   };
 
   useEffect(() => {
@@ -252,19 +263,19 @@ export default function CanvasEditor({ project }: Props) {
       });
     }, 200);
     return () => clearInterval(interval);
-  }, [playing, activeTile]);
+  }, [playing, activeTile, loadFrame]);
 
   const info = `${template.width}×${template.height} • ${scale}x zoom`;
 
   if (showModal) return <ProjectModal templates={TEMPLATES} onCreate={startProject} />;
 
   return (
-    <div className="flex flex-col h-full" ref={containerRef}>
-      <TopBar tool={tool} setTool={setTool} undo={undo} info={info} />
+    <div className="flex flex-col h-full overflow-hidden" ref={containerRef}>
+      <TopBar tool={tool} setTool={setTool} undo={undo} info={info} zoom={scale} zoomIn={zoomIn} zoomOut={zoomOut} />
       <div className="flex flex-1 overflow-hidden">
-        <LeftSidebar color={color} setColor={setColor} exportSheet={exportSheet} />
-        <div className="flex-1 flex items-center justify-center bg-gray-900">
-          <div className="relative" style={{ width: displayWidth, height: displayHeight }}>
+        <LeftSidebar color={color} setColor={setColor} exportSheet={exportSheet} importSprite={importSprite} />
+        <div className="flex-1 flex items-center justify-center bg-gray-900 overflow-auto">
+          <div className="relative bg-[repeating-conic-gradient(#4b5563_0%_25%,#374151_0%_50%)] bg-[length:16px_16px]" style={{ width: displayWidth, height: displayHeight }}>
             <canvas
               ref={canvasRef}
               className="border border-gray-700 absolute inset-0"
@@ -303,6 +314,9 @@ export default function CanvasEditor({ project }: Props) {
         }}
         playing={playing}
         togglePlay={() => setPlaying((p) => !p)}
+        frames={[0,1,2,3].map(i => frameMapRef.current[activeTile]?.[i] || null)}
+        width={template.width}
+        height={template.height}
       />
     </div>
   );
@@ -314,5 +328,6 @@ export default function CanvasEditor({ project }: Props) {
     if (!ctx) return;
     const data = ctx.getImageData(0, 0, template.width, template.height);
     frameMapRef.current[activeTile][activeFrame] = data;
+    setFrameVersion(v => v + 1);
   }
 }
