@@ -59,6 +59,7 @@ export default function CanvasEditor({ project }: Props) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gridRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
   const [scale, setScale] = useState(4);
   const [tool, setTool] = useState('pencil');
@@ -70,8 +71,10 @@ export default function CanvasEditor({ project }: Props) {
   const frameMapRef = useRef<Record<string, Record<number, ImageData | null>>>({});
   const historyRef = useRef<ImageData[]>([]);
 
-  const canvasWidth = template.width * scale;
-  const canvasHeight = template.height * scale;
+  const canvasWidth = template.width;
+  const canvasHeight = template.height;
+  const displayWidth = canvasWidth * scale;
+  const displayHeight = canvasHeight * scale;
 
   const startProject = (t: SpriteTemplate, name: string) => {
     setTemplate(t);
@@ -93,12 +96,34 @@ export default function CanvasEditor({ project }: Props) {
   }, [computeScale]);
 
   const drawCheckerboard = (ctx: CanvasRenderingContext2D) => {
-    const size = 8 * scale;
+    const size = 8;
     ctx.fillStyle = '#444';
     for (let y = 0; y < canvasHeight; y += size) {
       for (let x = (y / size) % 2 === 0 ? 0 : size; x < canvasWidth; x += size * 2) {
         ctx.fillRect(x, y, size, size);
       }
+    }
+  };
+
+  const drawGrid = () => {
+    const gridCanvas = gridRef.current;
+    if (!gridCanvas) return;
+    const g = gridCanvas.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+    g.strokeStyle = 'rgba(0,0,0,0.4)';
+    g.lineWidth = 1;
+    for (let x = 0; x <= canvasWidth; x++) {
+      g.beginPath();
+      g.moveTo(x * scale + 0.5, 0);
+      g.lineTo(x * scale + 0.5, gridCanvas.height);
+      g.stroke();
+    }
+    for (let y = 0; y <= canvasHeight; y++) {
+      g.beginPath();
+      g.moveTo(0, y * scale + 0.5);
+      g.lineTo(gridCanvas.width, y * scale + 0.5);
+      g.stroke();
     }
   };
 
@@ -111,14 +136,22 @@ export default function CanvasEditor({ project }: Props) {
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     drawCheckerboard(ctx);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(buffer, 0, 0, template.width, template.height, 0, 0, canvasWidth, canvasHeight);
-  }, [canvasWidth, canvasHeight, template]);
+    ctx.drawImage(buffer, 0, 0);
+    drawGrid();
+  }, [canvasWidth, canvasHeight, template, scale]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const grid = gridRef.current;
+    if (!canvas || !grid) return;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
+    canvas.style.width = `${displayWidth}px`;
+    canvas.style.height = `${displayHeight}px`;
+    grid.width = displayWidth;
+    grid.height = displayHeight;
+    grid.style.width = `${displayWidth}px`;
+    grid.style.height = `${displayHeight}px`;
     if (!bufferRef.current || bufferRef.current.width !== template.width || bufferRef.current.height !== template.height) {
       const b = document.createElement('canvas');
       b.width = template.width;
@@ -128,7 +161,7 @@ export default function CanvasEditor({ project }: Props) {
     frameMapRef.current = {};
     ['front','back','front-shiny','back-shiny'].forEach(k => { frameMapRef.current[k] = {}; });
     redraw();
-  }, [canvasWidth, canvasHeight, template, redraw]);
+  }, [canvasWidth, canvasHeight, displayWidth, displayHeight, template, redraw]);
 
   const getCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -231,17 +264,26 @@ export default function CanvasEditor({ project }: Props) {
       <div className="flex flex-1 overflow-hidden">
         <LeftSidebar color={color} setColor={setColor} exportSheet={exportSheet} />
         <div className="flex-1 flex items-center justify-center bg-gray-900">
-          <canvas
-            ref={canvasRef}
-            className="border border-gray-700"
-            style={{ imageRendering: 'pixelated', touchAction: 'none' }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={endDraw}
-            onPointerLeave={endDraw}
-            width={canvasWidth}
-            height={canvasHeight}
-          />
+          <div className="relative" style={{ width: displayWidth, height: displayHeight }}>
+            <canvas
+              ref={canvasRef}
+              className="border border-gray-700 absolute inset-0"
+              style={{ imageRendering: 'pixelated', touchAction: 'none', width: displayWidth, height: displayHeight }}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={endDraw}
+              onPointerLeave={endDraw}
+              width={canvasWidth}
+              height={canvasHeight}
+            />
+            <canvas
+              ref={gridRef}
+              className="absolute inset-0 pointer-events-none"
+              style={{ imageRendering: 'pixelated', width: displayWidth, height: displayHeight }}
+              width={displayWidth}
+              height={displayHeight}
+            />
+          </div>
         </div>
         <RightSidebar
           active={activeTile}
