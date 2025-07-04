@@ -54,12 +54,14 @@ const TEMPLATES: SpriteTemplate[] = [
 
 export default function CanvasEditor() {
   const [template, setTemplate] = useState<SpriteTemplate>(TEMPLATES[0]);
-  const scale = 2;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(2);
   const canvasWidth = template.width * scale;
   const canvasHeight = template.height * scale;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -117,6 +119,19 @@ export default function CanvasEditor() {
     [template, scale, canvasWidth, canvasHeight]
   );
 
+  const computeScale = useCallback(() => {
+    const containerWidth = containerRef.current?.offsetWidth || window.innerWidth;
+    const desired = containerWidth * 0.65; // aim to fill ~65% of space
+    const newScale = Math.max(1, Math.floor(desired / template.width));
+    setScale(newScale);
+  }, [template]);
+
+  useEffect(() => {
+    computeScale();
+    window.addEventListener('resize', computeScale);
+    return () => window.removeEventListener('resize', computeScale);
+  }, [computeScale]);
+
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     const buffer = bufferRef.current;
@@ -139,7 +154,7 @@ export default function CanvasEditor() {
     drawGrid(ctx);
   }, [canvasWidth, canvasHeight, drawGrid, template]);
 
-  // initialise canvases whenever the template changes
+  // initialise canvases whenever the template or scale changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -147,10 +162,16 @@ export default function CanvasEditor() {
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
 
-    const buffer = document.createElement('canvas');
-    buffer.width = template.width;
-    buffer.height = template.height;
-    bufferRef.current = buffer;
+    if (
+      !bufferRef.current ||
+      bufferRef.current.width !== template.width ||
+      bufferRef.current.height !== template.height
+    ) {
+      const buffer = document.createElement('canvas');
+      buffer.width = template.width;
+      buffer.height = template.height;
+      bufferRef.current = buffer;
+    }
 
     redraw();
   }, [canvasWidth, canvasHeight, template, redraw]);
@@ -224,45 +245,104 @@ export default function CanvasEditor() {
     }
   };
 
+  const importSprite = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const buffer = document.createElement('canvas');
+      buffer.width = img.width;
+      buffer.height = img.height;
+      const ctx = buffer.getContext('2d');
+      if (!ctx) return;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0);
+      bufferRef.current = buffer;
+      setTemplate({
+        id: 'imported',
+        name: 'Imported Sprite',
+        width: img.width,
+        height: img.height,
+      });
+    };
+    img.src = URL.createObjectURL(file);
+  };
+
   return (
-    <div className="space-y-2">
-      <select
-        value={template.id}
-        onChange={(e) =>
-          setTemplate(
-            TEMPLATES.find((t) => t.id === e.target.value) || TEMPLATES[0]
-          )
-        }
-        className="border p-1"
-      >
-        {TEMPLATES.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </select>
-      <canvas
-        ref={canvasRef}
-        className="border"
-        width={canvasWidth}
-        height={canvasHeight}
-        style={{ touchAction: 'none', imageRendering: 'pixelated' }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onContextMenu={(e) => e.preventDefault()}
-      />
-      <div className="text-sm text-center">
+    <div ref={containerRef} className="flex flex-col items-center space-y-4 p-4">
+      <div className="flex items-center space-x-2">
+        <label htmlFor="template" className="font-medium">Template:</label>
+        <select
+          id="template"
+          value={template.id}
+          onChange={(e) =>
+            setTemplate(
+              TEMPLATES.find((t) => t.id === e.target.value) || TEMPLATES[0]
+            )
+          }
+          className="bg-gray-800 border border-gray-600 text-white px-2 py-1 rounded"
+        >
+          {TEMPLATES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="border border-gray-700 shadow-lg p-2 bg-black">
+        <canvas
+          ref={canvasRef}
+          className="block"
+          width={canvasWidth}
+          height={canvasHeight}
+          style={{ touchAction: 'none', imageRendering: 'pixelated' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+        />
+      </div>
+      <div className="text-sm text-center text-gray-300">
         {template.name} — {template.width}x{template.height}
       </div>
-      <div className="space-x-2">
-        <button onClick={() => setIsErasing((v) => !v)}>
+      <div className="flex flex-wrap justify-center gap-2">
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+          onClick={() => setIsErasing((v) => !v)}
+        >
           {isErasing ? 'Erase Mode' : 'Draw Mode'}
         </button>
-        <button onClick={clearCanvas}>Clear Canvas</button>
-        <button onClick={uploadSprite}>Upload Sprite</button>
+        <button
+          className="bg-gray-700 hover:bg-gray-800 text-white px-3 py-1 rounded"
+          onClick={clearCanvas}
+        >
+          Clear Canvas
+        </button>
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+          onClick={uploadSprite}
+        >
+          Upload Sprite
+        </button>
+        <button
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+          onClick={importSprite}
+        >
+          Import Sprite
+        </button>
       </div>
+      <input
+        type="file"
+        accept="image/png"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+      />
       {downloadUrl && (
         <div>
           <a
@@ -270,6 +350,7 @@ export default function CanvasEditor() {
             target="_blank"
             rel="noopener noreferrer"
             download
+            className="underline text-blue-500"
           >
             Download Sprite
           </a>
