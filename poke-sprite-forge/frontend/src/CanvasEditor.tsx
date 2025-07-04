@@ -1,82 +1,91 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export default function CanvasEditor() {
+  const gridSize = 32;
+  const cellSize = 16;
+  const canvasSize = gridSize * cellSize;
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [color, setColor] = useState<string>('#000000');
-  const [isDrawing, setIsDrawing] = useState(false);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const off = document.createElement('canvas');
-    off.width = canvas.width;
-    off.height = canvas.height;
-    bufferRef.current = off;
-  }, []);
-
-  const drawGrid = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+  const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    for (let i = 0; i <= canvas.width; i += 16) {
+    for (let x = 0; x <= canvasSize; x += cellSize) {
       ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i, canvas.height);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvasSize);
       ctx.stroke();
     }
-    for (let j = 0; j <= canvas.height; j += 16) {
+    for (let y = 0; y <= canvasSize; y += cellSize) {
       ctx.beginPath();
-      ctx.moveTo(0, j);
-      ctx.lineTo(canvas.width, j);
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvasSize, y);
       ctx.stroke();
     }
-  };
+  }, [canvasSize, cellSize]);
 
-  const redraw = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    const buffer = bufferRef.current;
-    if (!canvas || !ctx || !buffer) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(buffer, 0, 0);
-    drawGrid();
-  };
-
-  const drawPixel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     const buffer = bufferRef.current;
     if (!canvas || !buffer) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / 16) * 16;
-    const y = Math.floor((e.clientY - rect.top) / 16) * 16;
-    const ctx = buffer.getContext('2d');
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, 16, 16);
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
+    ctx.drawImage(buffer, 0, 0);
+    drawGrid(ctx);
+  }, [canvasSize, drawGrid]);
+
+  // initialise canvases
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+
+    const buffer = document.createElement('canvas');
+    buffer.width = canvasSize;
+    buffer.height = canvasSize;
+    bufferRef.current = buffer;
+
     redraw();
+  }, [canvasSize, redraw]);
+
+
+  const getCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / cellSize) * cellSize;
+    const y = Math.floor((e.clientY - rect.top) / cellSize) * cellSize;
+    return { x, y };
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageSrc(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const ctx = buffer.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getCoords(e);
+    if (e.button === 2) {
+      ctx.clearRect(x, y, cellSize, cellSize);
+    } else {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x, y, cellSize, cellSize);
+    }
+    redraw();
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     setIsDrawing(true);
-    drawPixel(e);
+    draw(e);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isDrawing) {
-      drawPixel(e);
+      draw(e);
     }
   };
 
@@ -84,83 +93,60 @@ export default function CanvasEditor() {
     setIsDrawing(false);
   };
 
-  const handleExport = async () => {
+  const clearCanvas = () => {
+    const buffer = bufferRef.current;
+    if (!buffer) return;
+    const ctx = buffer.getContext('2d');
+    ctx?.clearRect(0, 0, canvasSize, canvasSize);
+    redraw();
+    setDownloadUrl(null);
+  };
+
+  const uploadSprite = async () => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const dataUrl = buffer.toDataURL('image/png');
-    const base = import.meta.env.VITE_API_BASE_URL || '';
-    const res = await fetch(`${base}/upload`, {
+
+    const res = await fetch(`${import.meta.env.VITE_API_BASE}/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: dataUrl })
+      body: JSON.stringify({ image: dataUrl }),
     });
+
     if (res.ok) {
-      const result = await res.json();
-      alert(`Uploaded! URL: ${result.url}`);
+      const body = (await res.json()) as { url: string };
+      setDownloadUrl(body.url);
     }
   };
 
   return (
-
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <input
-          type="file"
-          accept=".png,.nclr,image/png"
-          onChange={handleFileChange}
-          className="border rounded p-1"
-        />
-        <input
-          type="color"
-          value={color}
-          onChange={e => setColor(e.target.value)}
-          className="w-10 h-10 p-0 border rounded"
-        />
-        <button
-          onClick={handleExport}
-          className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Export
-        </button>
+      <canvas
+        ref={canvasRef}
+        className="border"
+        style={{ touchAction: 'none', imageRendering: 'pixelated' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+      <div className="space-x-2">
+        <button onClick={clearCanvas}>Clear Canvas</button>
+        <button onClick={uploadSprite}>Upload Sprite</button>
       </div>
-=======
-    <div>
-      <input
-        type="file"
-        accept=".png,.nclr,image/png"
-        onChange={handleFileChange}
-      />
-      <input type="color" value={color} onChange={e => setColor(e.target.value)} />
-
-
-        className="border touch-none"
-
-        style={{ border: '1px solid #ccc', touchAction: 'none' }}
-
-      />
-      {imageSrc && (
-        <img
-          src={imageSrc}
-          alt="preview"
-          onLoad={e => {
-            const canvas = canvasRef.current;
-            const buffer = bufferRef.current;
-            const ctx = buffer?.getContext('2d');
-            if (canvas && buffer && ctx) {
-              const img = e.currentTarget;
-              canvas.width = img.width;
-              canvas.height = img.height;
-              buffer.width = img.width;
-              buffer.height = img.height;
-              ctx.clearRect(0, 0, buffer.width, buffer.height);
-              ctx.drawImage(img, 0, 0);
-              redraw();
-            }
-          }}
-          style={{ display: 'none' }}
-        />
+      {downloadUrl && (
+        <div>
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+          >
+            Download Sprite
+          </a>
+        </div>
       )}
-      <button onClick={handleExport}>Export</button>
     </div>
   );
 }
