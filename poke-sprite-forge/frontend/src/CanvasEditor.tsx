@@ -8,6 +8,7 @@ export default function CanvasEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bufferRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isErasing, setIsErasing] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -58,8 +59,10 @@ export default function CanvasEditor() {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / cellSize) * cellSize;
-    const y = Math.floor((e.clientY - rect.top) / cellSize) * cellSize;
+    let x = Math.floor((e.clientX - rect.left) / cellSize) * cellSize;
+    let y = Math.floor((e.clientY - rect.top) / cellSize) * cellSize;
+    x = Math.max(0, Math.min(x, canvasSize - cellSize));
+    y = Math.max(0, Math.min(y, canvasSize - cellSize));
     return { x, y };
   };
 
@@ -69,7 +72,8 @@ export default function CanvasEditor() {
     const ctx = buffer.getContext('2d');
     if (!ctx) return;
     const { x, y } = getCoords(e);
-    if (e.button === 2) {
+    const erase = isErasing || e.button === 2;
+    if (erase) {
       ctx.clearRect(x, y, cellSize, cellSize);
     } else {
       ctx.fillStyle = '#000';
@@ -107,7 +111,7 @@ export default function CanvasEditor() {
     if (!buffer) return;
     const dataUrl = buffer.toDataURL('image/png');
 
-    const res = await fetch(`${import.meta.env.VITE_API_BASE}/upload`, {
+    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: dataUrl }),
@@ -132,6 +136,9 @@ export default function CanvasEditor() {
         onContextMenu={(e) => e.preventDefault()}
       />
       <div className="space-x-2">
+        <button onClick={() => setIsErasing((v) => !v)}>
+          {isErasing ? 'Erase Mode' : 'Draw Mode'}
+        </button>
         <button onClick={clearCanvas}>Clear Canvas</button>
         <button onClick={uploadSprite}>Upload Sprite</button>
       </div>
