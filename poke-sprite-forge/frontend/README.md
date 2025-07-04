@@ -1,6 +1,8 @@
 # React + TypeScript + Vite
 
+
 This frontend uses React with Vite and Tailwind CSS. It provides a simple sprite editor component.
+
 
 Currently, two official plugins are available:
 

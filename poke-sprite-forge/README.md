@@ -24,8 +24,13 @@ Monorepo for a web-based sprite editor targeting DS Pokémon ROM hacks.
 API requests are sent to the Worker via the `VITE_API_BASE_URL` variable defined
 in `frontend/.env`.
 
+
 The frontend uses Tailwind CSS for styling. The Worker includes permissive CORS
 headers for local use, so the frontend can communicate with it directly.
+
+The Worker includes permissive CORS headers for local use, so the frontend can
+communicate with it directly.
+
 
 ## Manual Install (optional)
 

@@ -101,6 +101,7 @@ export default function CanvasEditor() {
   };
 
   return (
+
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <input
@@ -122,15 +123,20 @@ export default function CanvasEditor() {
           Export
         </button>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={256}
-        height={256}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+=======
+    <div>
+      <input
+        type="file"
+        accept=".png,.nclr,image/png"
+        onChange={handleFileChange}
+      />
+      <input type="color" value={color} onChange={e => setColor(e.target.value)} />
+
+
         className="border touch-none"
+
+        style={{ border: '1px solid #ccc', touchAction: 'none' }}
+
       />
       {imageSrc && (
         <img
@@ -154,6 +160,7 @@ export default function CanvasEditor() {
           style={{ display: 'none' }}
         />
       )}
+      <button onClick={handleExport}>Export</button>
     </div>
   );
 }
