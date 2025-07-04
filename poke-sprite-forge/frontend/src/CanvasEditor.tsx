@@ -101,6 +101,29 @@ export default function CanvasEditor() {
   };
 
   return (
+
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <input
+          type="file"
+          accept=".png,.nclr,image/png"
+          onChange={handleFileChange}
+          className="border rounded p-1"
+        />
+        <input
+          type="color"
+          value={color}
+          onChange={e => setColor(e.target.value)}
+          className="w-10 h-10 p-0 border rounded"
+        />
+        <button
+          onClick={handleExport}
+          className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Export
+        </button>
+      </div>
+=======
     <div>
       <input
         type="file"
@@ -108,15 +131,12 @@ export default function CanvasEditor() {
         onChange={handleFileChange}
       />
       <input type="color" value={color} onChange={e => setColor(e.target.value)} />
-      <canvas
-        ref={canvasRef}
-        width={256}
-        height={256}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+
+
+        className="border touch-none"
+
         style={{ border: '1px solid #ccc', touchAction: 'none' }}
+
       />
       {imageSrc && (
         <img

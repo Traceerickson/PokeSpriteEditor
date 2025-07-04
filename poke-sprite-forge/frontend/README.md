@@ -1,6 +1,8 @@
 # React + TypeScript + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+This frontend uses React with Vite and Tailwind CSS. It provides a simple sprite editor component.
+
 
 Currently, two official plugins are available:
 
